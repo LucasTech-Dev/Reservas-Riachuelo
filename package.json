@@ -1,0 +1,7 @@
+{
+  "name": "reservas-riachuelo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sistema escolar de reservas de salas e equipamentos"
+}

@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Bloqueio inicial: substituir somente por regras validadas por funcionalidade.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

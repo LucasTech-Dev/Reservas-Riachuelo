@@ -1,0 +1,6 @@
+{
+  "firestore": {
+    "rules": "seguranca/firestore.rules",
+    "indexes": "banco/firestore.indexes.json"
+  }
+}

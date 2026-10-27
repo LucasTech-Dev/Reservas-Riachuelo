@@ -1,0 +1,27 @@
+# Configuração local
+.env
+.env.*
+!.env.example
+# Dependências e builds
+node_modules/
+dist/
+coverage/
+# Firebase local
+.firebase/
+*-debug.log
+firebase-debug.log*
+firestore-debug.log*
+ui-debug.log*
+# Credenciais e exportações privadas
+*service-account*.json
+*serviceAccount*.json
+*-firebase-adminsdk-*.json
+*.pem
+*.key
+banco/backups/
+banco/exports/
+# Editor e sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
