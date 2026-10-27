@@ -1,6 +1,6 @@
 # Arquitetura
 
-Front-end: HTML, CSS e JavaScript. Camada de serviços: JavaScript com módulos ES6 e Firebase Web SDK. Persistência: Firestore. Identidade: Firebase Authentication. Sem Bootstrap, PHP, MySQL, servidor próprio ou Cloud Functions.
+Front-end: HTML, CSS e JavaScript. Camada de serviços: JavaScript com módulos ES6 e Firebase Web SDK. Persistência: Firestore. Identidade: Firebase Authentication. Servidor próprio com hospedagem no cloudflare.
 
 O front importa os serviços de backend. O Firebase aplica as regras de seguranca/firestore.rules. A pasta banco guarda documentação e índices, não uma instância local do banco.
 
