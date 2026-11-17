@@ -3,5 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Sistema escolar de reservas de salas e equipamentos"
+  "description": "Sistema escolar de reservas de salas e equipamentos",
+  "dependencies": {
+    "firebase": "13.3.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "node scripts/sincronizar-grade.mjs --check && vite build",
+    "preview": "vite preview",
+    "grade:sincronizar": "node scripts/sincronizar-grade.mjs"
+  },
+  "devDependencies": {
+    "vite": "8.3.8"
+  }
 }

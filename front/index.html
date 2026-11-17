@@ -2,17 +2,82 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
   <title>Reserva Riachuelo</title>
   <link rel="stylesheet" href="./css/style.css">
   <script type="module" src="./js/main.js"></script>
 </head>
 <body>
   <main class="container">
-    <p class="label">Instituto Estadual Riachuelo</p>
-    <h1>Reserva Riachuelo</h1>
-    <p>Reservas de salas e equipamentos da escola.</p>
-    <p role="status">Projeto em desenvolvimento. Login e reservas serão disponibilizados nas próximas etapas.</p>
+    <header>
+      <p class="label">Instituto Estadual Riachuelo</p>
+      <h1>Reserva Riachuelo</h1>
+      <p>Reserve uma sala e acompanhe a aprovação da direção.</p>
+    </header>
+    <p id="notice" class="notice" role="status" aria-live="polite">Carregando acesso…</p>
+    <section id="auth-view" hidden aria-labelledby="login-title">
+      <h2 id="login-title">Entrar</h2>
+      <form id="login-form" class="form">
+        <label for="login-email">E-mail</label>
+        <input id="login-email" name="email" type="email" inputmode="email" autocapitalize="none" spellcheck="false" autocomplete="username" required>
+        <label for="login-password">Senha</label>
+        <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+        <button class="primary" type="submit">Entrar</button>
+      </form>
+      <p class="muted">Acesso para professores e direção com conta autorizada pela escola.</p>
+    </section>
+    <section id="workspace" hidden>
+      <div class="session-bar">
+        <p id="session-summary"></p>
+        <button id="logout-button" class="secondary" type="button">Sair</button>
+      </div>
+      <nav class="navigation" aria-label="Navegação principal">
+        <a href="#calendario" data-page="calendario">Calendário</a>
+        <a href="#nova-reserva" data-page="nova-reserva" id="new-reservation-link">Nova reserva</a>
+        <a href="#reservas" data-page="reservas">Reservas</a>
+      </nav>
+      <section id="calendar-view" hidden aria-labelledby="calendar-title">
+        <div class="list-heading"><div><h2 id="calendar-title">Calendário de reservas</h2><p id="calendar-description" class="muted"></p></div><a href="#nova-reserva" class="button primary" id="calendar-new-link">Nova reserva</a></div>
+        <div class="calendar-toolbar"><button id="previous-month" class="secondary" type="button" aria-label="Mês anterior">←</button><h3 id="calendar-month" aria-live="polite"></h3><button id="next-month" class="secondary" type="button" aria-label="Próximo mês">→</button></div>
+        <div class="calendar-week" aria-hidden="true"><span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span></div>
+        <div id="calendar-grid" class="calendar-grid" role="group" aria-label="Dias do mês"></div>
+        <div class="calendar-legend"><span><i class="dot pendente"></i>Pendente</span><span><i class="dot aprovada"></i>Aprovada</span><span><i class="dot recusada"></i>Recusada</span></div>
+        <section id="day-details" tabindex="-1" class="day-details" aria-labelledby="selected-day-title"><h3 id="selected-day-title"></h3><div id="selected-day-reservations"></div></section>
+      </section>
+      <section id="professor-view" hidden aria-labelledby="reserva-title">
+        <h2 id="reserva-title">Solicitar uma sala</h2>
+        <form id="reservation-form" class="form">
+          <label for="sala">Sala</label>
+          <select id="sala" name="sala" required><option value="">Carregando salas…</option></select>
+          <div class="fields">
+            <div><label for="data">Data</label><input id="data" name="data" type="date" aria-describedby="periodo-ajuda" required></div>
+            <div><label for="turno">Turno</label><select id="turno" name="turno" required><option value="">Selecione o turno</option></select></div>
+          </div>
+          <label for="periodo">Período</label>
+          <select id="periodo" name="periodo" required disabled aria-describedby="periodo-ajuda horario-resumo"></select>
+          <p id="horario-resumo" class="muted" role="status"></p>
+          <p class="muted" id="periodo-ajuda">Uma aula de 45 minutos por solicitação. Antecedência de 1 hora a 28 dias. Horário de Brasília. A disponibilidade é confirmada ao enviar. Intervalos sujeitos à confirmação da direção.</p>
+          <button id="request-button" class="primary" type="submit" disabled>Solicitar reserva</button>
+        </form>
+      </section>
+      <section id="reservas-section" hidden aria-labelledby="list-title">
+        <div class="list-heading"><h2 id="list-title">Minhas solicitações</h2><button id="refresh-button" class="secondary" type="button">Atualizar</button></div>
+        <div class="list-filter"><label for="status-filter">Situação</label><select id="status-filter"><option value="todas">Todas</option><option value="pendente">Pendentes</option><option value="aprovada">Aprovadas</option><option value="recusada">Recusadas</option></select></div>
+        <p id="list-state" class="muted" role="status">Carregando solicitações…</p>
+        <div class="table-wrap">
+          <table aria-label="Lista de reservas">
+            <thead><tr><th scope="col">Sala</th><th scope="col">Responsável</th><th scope="col">Data e horário</th><th scope="col">Situação</th><th id="actions-heading" scope="col" hidden>Ações da direção</th></tr></thead>
+            <tbody id="reservations-body"></tbody>
+          </table>
+        </div>
+      </section>
+    </section>
+    <dialog id="reservation-dialog" aria-labelledby="detail-title">
+      <div class="list-heading"><h2 id="detail-title">Detalhes da reserva</h2><button type="button" id="close-detail" class="secondary" autofocus>Fechar</button></div>
+      <dl id="reservation-detail"></dl>
+    </dialog>
+    <footer class="muted">Instituto Estadual Riachuelo · Horário de Brasília</footer>
+    <noscript>Ative o JavaScript para acessar as reservas.</noscript>
   </main>
 </body>
 </html>

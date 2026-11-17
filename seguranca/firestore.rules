@@ -1,9 +1,168 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Bloqueio inicial: substituir somente por regras validadas por funcionalidade.
-    match /{document=**} {
-      allow read, write: if false;
+    function member() {
+      return request.auth != null
+        && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.ativo == true
+        && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.perfil in ['professor', 'admin'];
     }
+    function admin() {
+      return member() && get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.perfil == 'admin';
+    }
+    function profile(d, uid) {
+      return d.keys().hasAll(['uid','nome','email','perfil','ativo'])
+        && d.keys().hasOnly(['uid','nome','email','perfil','ativo'])
+        && d.uid == uid && d.nome is string && d.nome.size() > 0 && d.nome.size() <= 80
+        && d.email is string && d.email.size() > 3 && d.email.size() <= 254
+        && d.perfil in ['professor','admin'] && d.ativo is bool;
+    }
+    function room(d, id) {
+      return d.keys().hasAll(['id','nome','disponivel']) && d.keys().hasOnly(['id','nome','disponivel'])
+        && d.id == id && id.matches('[A-Za-z0-9-]{1,80}')
+        && d.nome is string && d.nome.size() > 0 && d.nome.size() <= 100 && d.disponivel is bool;
+    }
+    function escolar(d) { return d.get('gradeVersao', 0) == 1; }
+    // Gerado de backend/config/periodos.js por scripts/sincronizar-grade.mjs.
+    function schoolTime(d) {
+      let quarter = d.slot % 96;
+      return d.periodo is int && d.periodo >= 1 && d.periodo <= 6
+        && ((d.turno == 'manha' && quarter == [40,43,46,51,54,57][d.periodo - 1])
+          || (d.turno == 'tarde' && quarter == [65,68,71,75,78,81][d.periodo - 1])
+          || (d.turno == 'noite' && quarter == [86,89,92,0,3,6][d.periodo - 1]));
+    }
+    function valid(d) {
+      return d.keys().hasAll(['id','professorUid','salaId','slot','inicio','fim','status','criadaEm','atualizadaEm'])
+        && d.id is string && d.professorUid is string && d.salaId is string
+        && d.salaId.matches('[A-Za-z0-9-]{1,80}')
+        && d.slot is int && d.inicio is timestamp && d.fim is timestamp && d.inicio.nanos() == 0
+        && d.status in ['pendente','aprovada','recusada']
+        && ((escolar(d)
+          && d.keys().hasOnly(['id','professorUid','salaId','slot','inicio','fim','status','criadaEm','atualizadaEm','gradeVersao','turno','periodo'])
+          && schoolTime(d) && d.inicio.toMillis() == d.slot * 900000 && d.fim == d.inicio + duration.value(45, 'm'))
+        || (!escolar(d)
+          && d.keys().hasOnly(['id','professorUid','salaId','slot','inicio','fim','status','criadaEm','atualizadaEm'])
+          && d.inicio.toMillis() == d.slot * 1800000 && d.fim == d.inicio + duration.value(30, 'm')));
+    }
+    function roomLock(d) {
+      return /databases/$(database)/documents/ocupacoes/$(d.salaId)/periodos/$(string(d.slot));
+    }
+    function teacherLock(d) {
+      return /databases/$(database)/documents/agendaProfessores/$(d.professorUid)/periodos/$(string(d.slot));
+    }
+    function roomQuarter(d, offset) {
+      return /databases/$(database)/documents/ocupacoes15/$(d.salaId)/periodos/$(string(d.slot + offset));
+    }
+    function teacherQuarter(d, offset) {
+      return /databases/$(database)/documents/agendaProfessores15/$(d.professorUid)/periodos/$(string(d.slot + offset));
+    }
+    function quarterLocked(d, i) {
+      return getAfter(roomQuarter(d, i)).data.reservaId == d.id
+        && getAfter(teacherQuarter(d, i)).data.reservaId == d.id;
+    }
+    function quarterUnlocked(d, i) {
+      return !existsAfter(roomQuarter(d, i)) && !existsAfter(teacherQuarter(d, i));
+    }
+    function locked(d) {
+      return (escolar(d) && quarterLocked(d,0) && quarterLocked(d,1) && quarterLocked(d,2))
+        || (!escolar(d) && getAfter(roomLock(d)).data.reservaId == d.id && getAfter(teacherLock(d)).data.reservaId == d.id);
+    }
+    function unlocked(d) {
+      return (escolar(d) && quarterUnlocked(d,0) && quarterUnlocked(d,1) && quarterUnlocked(d,2))
+        || (!escolar(d) && !existsAfter(roomLock(d)) && !existsAfter(teacherLock(d)));
+    }
+    match /usuarios/{uid} {
+      allow get: if request.auth != null && (request.auth.uid == uid || admin());
+      allow list: if admin();
+      allow create, update: if admin() && request.auth.uid != uid && profile(request.resource.data, uid);
+      allow delete: if false;
+    }
+    match /salas/{id} {
+      allow read: if member();
+      allow create, update: if admin() && room(request.resource.data, id);
+      allow delete: if false;
+    }
+    match /reservas/{id} {
+      allow read: if member() && (admin() || resource.data.professorUid == request.auth.uid);
+      allow create: if member() && valid(request.resource.data)
+        && request.resource.data.id == id && request.resource.data.professorUid == request.auth.uid
+        && request.resource.data.status == 'pendente'
+        && request.resource.data.criadaEm == request.time && request.resource.data.atualizadaEm == request.time
+        && request.resource.data.inicio >= request.time + duration.value(1, 'h')
+        && request.resource.data.inicio <= request.time + duration.value(28, 'd')
+        && get(/databases/$(database)/documents/salas/$(request.resource.data.salaId)).data.disponivel == true
+        && locked(request.resource.data);
+      allow update: if admin() && valid(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','atualizadaEm'])
+        && request.resource.data.atualizadaEm == request.time
+        && resource.data.status == 'pendente' && request.resource.data.status in ['aprovada','recusada']
+        && (request.resource.data.status == 'aprovada'
+          ? (locked(request.resource.data)
+            && get(/databases/$(database)/documents/salas/$(resource.data.salaId)).data.disponivel == true)
+          : unlocked(resource.data));
+      allow delete: if admin() && (resource.data.status == 'recusada' || unlocked(resource.data));
+    }
+    function lockData(d) {
+      return d.keys().hasAll(['reservaId']) && d.keys().hasOnly(['reservaId']) && d.reservaId is string;
+    }
+    function booking(id) {
+      return getAfter(/databases/$(database)/documents/reservas/$(id)).data;
+    }
+    function releasable(id) {
+      return !existsAfter(/databases/$(database)/documents/reservas/$(id))
+        || booking(id).status == 'recusada';
+    }
+    match /ocupacoes/{salaId}/periodos/{slot} {
+      allow read: if member();
+      allow create: if member() && lockData(request.resource.data)
+        && booking(request.resource.data.reservaId).professorUid == request.auth.uid
+        && booking(request.resource.data.reservaId).status == 'pendente'
+        && booking(request.resource.data.reservaId).salaId == salaId
+        && !escolar(booking(request.resource.data.reservaId))
+        && string(booking(request.resource.data.reservaId).slot) == slot
+        && legacyClear(booking(request.resource.data.reservaId), true);
+      allow update: if false;
+      allow delete: if admin() && releasable(resource.data.reservaId);
+    }
+    match /agendaProfessores/{uid}/periodos/{slot} {
+      allow read: if member() && (request.auth.uid == uid || admin());
+      allow create: if member() && request.auth.uid == uid && lockData(request.resource.data)
+        && booking(request.resource.data.reservaId).professorUid == uid
+        && booking(request.resource.data.reservaId).status == 'pendente'
+        && !escolar(booking(request.resource.data.reservaId))
+        && string(booking(request.resource.data.reservaId).slot) == slot
+        && legacyClear(booking(request.resource.data.reservaId), false);
+      allow update: if false;
+      allow delete: if admin() && releasable(resource.data.reservaId);
+    }
+    function legacyClear(d, isRoom) {
+      return (isRoom
+        && !existsAfter(/databases/$(database)/documents/ocupacoes15/$(d.salaId)/periodos/$(string(d.slot * 2)))
+        && !existsAfter(/databases/$(database)/documents/ocupacoes15/$(d.salaId)/periodos/$(string(d.slot * 2 + 1))))
+        || (!isRoom
+        && !existsAfter(/databases/$(database)/documents/agendaProfessores15/$(d.professorUid)/periodos/$(string(d.slot * 2)))
+        && !existsAfter(/databases/$(database)/documents/agendaProfessores15/$(d.professorUid)/periodos/$(string(d.slot * 2 + 1))));
+    }
+    function schoolLock(d, slot) {
+      return escolar(d) && d.status == 'pendente' && d.professorUid == request.auth.uid
+        && slot in [string(d.slot), string(d.slot + 1), string(d.slot + 2)];
+    }
+    match /ocupacoes15/{salaId}/periodos/{slot} {
+      allow read: if member();
+      allow create: if member() && lockData(request.resource.data)
+        && schoolLock(booking(request.resource.data.reservaId), slot)
+        && booking(request.resource.data.reservaId).salaId == salaId
+        && !existsAfter(/databases/$(database)/documents/ocupacoes/$(salaId)/periodos/$(string(int(int(slot) / 2))));
+      allow update: if false;
+      allow delete: if admin() && releasable(resource.data.reservaId);
+    }
+    match /agendaProfessores15/{uid}/periodos/{slot} {
+      allow read: if member() && (request.auth.uid == uid || admin());
+      allow create: if member() && request.auth.uid == uid && lockData(request.resource.data)
+        && schoolLock(booking(request.resource.data.reservaId), slot)
+        && !existsAfter(/databases/$(database)/documents/agendaProfessores/$(uid)/periodos/$(string(int(int(slot) / 2))));
+      allow update: if false;
+      allow delete: if admin() && releasable(resource.data.reservaId);
+    }
+    match /{document=**} { allow read, write: if false; }
   }
 }
